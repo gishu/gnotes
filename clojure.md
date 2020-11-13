@@ -174,6 +174,147 @@ NOTE: A class is generated with predefined accessors.
   
 ```
 
+## State/Identity
+
+### Ref Types
+
+implement IRef. Do not block when deref with @
+
+Type | Create | Update | Setter
+----|---|---|---|
+Atom | atom | swap! | reset! |
+Ref | ref | alter, commute | ref-set |
+Var | def | alter-var-root | var-set |
+Agent | agent | send, send-off | restart-agent |
+
+* Atoms are sync updated, independent, will retry if item changed concurrently
+* Refs - used to modify a group of things within a software transaction i.e. a `dosync` block. Retries if any item has changed concurrently.
+  ** alter will retry. Use commute to not check previous value - no retries, performant.
+* Vars - thread local. No need to manage state.
+* Agents - updates are async. Updates are held till enclosing txn commits
+
+
+**Pattern**
+
+* (create-fn container)
+* (update-fn container setter-fn & args)
+* (setter-fn container new-value)
+
+setter-fn is applied to the current value to yield the next state
+
+Ref Types also support watchers (change-notific.) and validators
+
+```clojure
+(println "Watchers! - Change notif.")
+
+(defn a-watcher
+  [key identity old new]
+  (println (format "event {Key=%s Id=%s %s=>%s}" key identity old new))
+  )
+
+(def atom1 (atom {:age 10}))
+(add-watch atom1 :watch1 a-watcher)
+  (compare-and-set! atom1 @atom1 {:age 50} )
+
+(add-watch atom1 :watch2 a-watcher)
+  (swap! atom1 update-in [:age] + 5)
+(remove-watch atom1 :watch1)
+; Note: handlers are called in reverse order
+
+(println "Validators - integrity")
+
+(def counter (atom 0))
+
+(compare-and-set! counter 0 100)
+
+; function should return true for valid - else false/throw
+(set-validator! counter pos?)
+
+(compare-and-set! counter 100  -10)
+
+```
+
+
+## Concurrency
+
+All of the following
+
+1. block if the result is not ready
+2. result is cached, if deref/fetched multiple times
+
+### Future
+To move work onto a threadpool thread, fire-and-forget. Returns a ticket that can be deref (blocking) to get the value (cached)
+
+```
+(future [form])		;=> future object
+; futureObj-[cancel/done?/cancelled?]
+; deref/ @futureObj => result
+```
+
+### Promise
+Promise transfers one value from one thread to another.
+```
+(let [p (promise)]
+     (deliver p 42)
+)
+;	realized? non blocking completion check
+;	@p => result
+```
+
+### Delays
+Delays are tasks that are not immediately executed until they are `forced`. 
+
+;; doesn't execute immediately until forced
+(let [notify (delay (println "Delayed!"))]
+  (force notify)
+)
+;; same as deref a future
+
+### Misc
+
+Clojure has a pmap (parallel execution via futures), when item processing outweighs the sync overhead
+
+Better yet, are clojure.core.reducers (aliased as r here)
+```(->> products
+     (r/filter ground?) (r/map :weight) (r/fold +))
+```
+fold partitions the coll into groups, reduces in parallel and combines
+r/func combine to a single reducer function (xducer) avoiding intermediate results. They themselves dont transform the coll.
+i.e. utilize all available cores + less garbage created.
+LIMIT: fold works only on persistent maps & vectors.
+
+### core.async library
+
+Need to add dep to core.async
+
+```clojure
+(def echo-chan (chan))
+; consumer
+(go (println (<! echo-chan)))
+
+; prod
+(>!! echo-chan "cake!")
+
+(let [t (thread "3-layer-cake")]
+  (<!! t))	
+; => 3LC
+
+
+;; alts!!
+(let [ [result ch] (alts!! [c1 c2 (timeout 20)])  ]
+```
+
+* chan - creates channels, which communicate messages. Processes wait for completion of put/take. By default, unbuffered. (chan 2) creates a buffer of 2 msgs. when the limit is reached, the put/take blocks.
+  * sliding FIFO dropping LIFO
+  * <! >! used in go blocks - parks (doesn't block thread). <!! >!! to be used outside of go blocks - blocks.
+* go - creates go blocks, that execute on thread-pool threads.
+* thread - runs a process on a new thread. Use if your process is long-running to avoid consuming all thread pool threads. Returns a channel, on which the process' return value is put.
+* alts!! - takes a vector of channels and return the result of first successful operation and winning channel
+
+
+
+
+
 ## Testing
 
 ### Specs
