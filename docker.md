@@ -1,27 +1,99 @@
+My notes from the book "Docker In Action"
+
+# Basics 
 
 ```
-// watch logs and dump to stdout
-docker logs my-container -f
+// start a nginx container named web in detached mode (not attached to current terminal). For daemon/services.
+$docker run --detach --name web nginx:latest
+
+// attach an interactive terminal to a running container and run a command (here the bash shell)
+$docker exec -it web /bin/bash
+>>> root@49838061f301:/# ls / ..
+
+// list running containers, -a for all states (created/running/paused/restarting/removing/exited)
+$docker ps 
+
+// tail logs and dump to stdout
+$docker logs web -f
 
 // print metadata json
-docker inspect my-container
+$docker inspect web
+
+//TIP: Running Containers can be renamed
+$docker rename web old-web
+
+$docker stop/start web
+
+// remove containers
+$docker rm web
+// auto cleanup short-lived containers i.e. when it exits
+$docker run --rm busybox:1.29 date
 ```
 
-Isolation features
+##### network linking 
+creates unidirectional links - injects IPs into dependent containers. For 2 way, use docker networks.
+```
+MAILER_CID=$(docker run -d dockerinaction/ch2_mailer)
+WEB_CID=$(docker run -d nginx)
+
+AGENT_CID=$(docker run -d \    --link $WEB_CID:insideweb \    --link $MAILER_CID:insidemailer \    dockerinaction/ch2_agent)
+```
+
+###### Durability
+- you can specify a restart flag to attempt restarting the container if it exits/fails. Docker uses exp backoff strategy
+```
+$docker run -d --name backoff --restart always busybox:1.29 date
+$docker logs backoff
+Tue Jul 20 17:38:59 UTC 2021
+Tue Jul 20 17:39:01 UTC 2021
+Tue Jul 20 17:39:05 UTC 2021
+Tue Jul 20 17:39:12 UTC 2021
+```
+- more advanced solution is to use **init systems** which launch & maintain other processes (restarting them if reqd). Used when container is running multiple processes or uses child processes. e.g. an entire LAMP stack in one container
+
+
+
+## Isolation features of containers
 - multiple PID namespaces for processes.
-Env agnostic 
-- Read only filesystems
-- Env var injection
-- Volumes
+- Env agnostic 
+  - Read only filesystems 
+  - Env var injection
+  - Volumes
 - Union file systems: Image is made up of readonly layers. UnionFS uses a **copy-on-write** pattern. Only the bottom most layer is writable.
 
+A full fledged example 
 
+- attach container to a network
+- set env variables to pass in configuration
+- specify a docker volume to be mounted at a specific location in the container (data that outlives the container)
+```
+docker run -d ^
+    --name my-database ^
+    --network my-network ^
+    -e POSTGRES_DB=test ^
+    -e POSTGRES_USER=test-user ^
+    -e POSTGRES_PASSWORD=test-pwd ^
+    -e PGDATA=/var/lib/postgresql/data/pgdata ^
+    -v D:\dockervolumes\test-data:/var/lib/postgresql/data ^
+    lbm-postgres:13.2
+```
+
+# Identify / Find / Install
 ### Naming
 
 - docker.io/dockerinaction/ch3_hello i.e. [registy host:port]/[user or org]/[name]:[tag]
 - Each image can be tagged with multiple tags.
 - Docker hub is the default registry, where images are looked up if explicit registry is not specified
 
+```
+docker pull quay.io/me/anImage:latest
+
+// list all images
+docker image ls
+
+// remove image
+docker rmi some-image
+```
 
 ### Export / import
 
@@ -32,8 +104,31 @@ docker save -o MyImage.tar [image name]
 docker load -i MyImage.tar
 ```
 
-## Storage
+# Storage
 Linux unifies all storage into a single tree. Storage devices such as disk/usb are attached to specific locations on the tree called mount points {location + properties e.g. readonly + data source }
+
+### Docker volumes
+named FS trees managed by Docker. Can be backed by host FS or cloud storage.
+
+```
+docker volume create 
+  --driver local
+  --label purpose=cassandra
+  cass-shared
+
+docker run 
+  --volume cass-shared:/var/lib/cassandra/data
+  cassandra:2.2
+```
+
+Anonymous volumes: auto deleted when the container is removed or via `docker volume rm`
+```
+docker run --name fowler \
+--mount type=volume,dst=/library/PoEAA \
+--mount type=bind,src=/tmp,dst=/library/DSL \ 
+alpine:latest \
+echo "Fowler collection created."
+```
 
 ### Bind mounts
 attach a specified location on the host FS to a point on the container file tree.
@@ -59,20 +154,8 @@ docker run
   alpine:latest -v
 
 ```
+# Networking
 
-### Docker volumes
-named FS trees managed by Docker. Can be backed by host FS or cloud storage.
-
-```
-docker volume create 
-  --driver local
-  --label purpose=cassandra
-  cass-shared
-
-docker run 
-  --volume cass-shared:/var/lib/cassandra/data
-  cassandra:2.2
-```
 
 ###  Building Images
 
