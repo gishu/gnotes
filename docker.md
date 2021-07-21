@@ -155,6 +155,72 @@ docker run
 
 ```
 # Networking
+Docker creates a virtual network to connect all the containers to the network that the host is connected to - a **bridge** network.
+
+```
+$docker network ls
+>>> NETWORK ID     NAME              DRIVER    SCOPE
+701a49fbaec1   bridge            bridge    local
+7cd247047aa4   host              host      local
+ab54f8d7c801   none              null      local
+// bridge - default network
+// host - containers behave like uncontained processes on the host machine. No Ip per container.
+// none - container will not have any external network conn. Only loopback interface
+// Scope - local (constrained to machine), global (one per cluster node but no routing between), swarm (seamless routing between all nodes in cluster)
+
+// create a new network
+docker network create \
+--driver bridge \
+--label env=dev \
+--attachable \
+--scope local \
+--subnet 10.0.42.0/24 \
+--ip-range 10.0.42.128/25 \
+my-network
+
+// attach container to network
+$docker run --name bb --network my-network busybox:1.29 date
+
+// running from within container will print out loopback and ethernet interfaces
+root#ip -f inet -4 -o addr
+
+// attach running container to a network
+$docker network connect my-other-nw a-running-cont
+```
+Overlay network driver is available for DockerEngines with swarmMode enabled. Logical bridge component is multi-host aware and can route connections between any 2 nodes in swarm.
+
+### Nodeport publish
+Forward requests on host port to container port e.g.
+```
+# 0.0.0.0:8080:8080/tcp                  
+# 8080:8080/tcp                  
+# 8080:8080
+
+$ docker run --rm \
+  -p 8088:8080/udp \
+  --name dummy
+  alpine:3.8 echo "host UDP 8088 -> container UDP 8080"
+
+# list published port info
+$ docker port dummy 
+```
+
+Can specify DNS per container
+```
+$ docker run --rm \
+  --dns 8.8.8.8 \
+  alpine:3.8 \
+  nslookup docker.com 
+```
+
+Add host-IP Mappings
+```
+$docker run --rm \
+  --add-host test:10.10.10.255
+  alpine:3.8 \
+  nslookup test
+```
+
 
 
 ###  Building Images
