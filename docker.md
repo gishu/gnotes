@@ -304,3 +304,15 @@ checked every 30s. 3 failures => unhealthy
 3. If a file has the SUID or SGID bit set, it executes with root user. Ensure all files have this permission removed.
 ` chmod ug-s [file] `
 
+
+## Quotas / Resource constraints
+
+Display runtime stats. 
+```
+docker stats [containerName]
+```
+Set limits
+'''
+docker create ... --memory="200m" 
+  --cpu-shares 512 (relative weights)
+  --cpus="1.5" (at most 1.5 CPU
